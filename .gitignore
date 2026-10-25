@@ -9,3 +9,4 @@ data/
 video/out/
 video/demo.mp4
 video/voices/*.onnx
+video/thumbs/
