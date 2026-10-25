@@ -13,8 +13,12 @@ GST threshold, and lists foreign payments that still lack paperwork. AI categori
 - If Transaction Search is not enabled on the PayPal app, the UI says so and the demo data keeps working.
 
 ## How AI is used
-- With `ANTHROPIC_API_KEY` set: Claude categorises each payment note and writes a 3-sentence plain-language explanation of the freelancer's position.
-- Without a key: a deterministic rule-based fallback is used, so the app runs for anyone. The UI shows which engine produced each result.
+- Any OpenAI-compatible endpoint (`AI_BASE_URL`, `AI_MODEL`, `AI_API_KEY`): e.g. Google Gemini's free tier, Groq, OpenRouter or a local Ollama model. Or `ANTHROPIC_API_KEY` for Claude.
+- The model categorises each payment note and writes a 3-sentence plain-language explanation of the freelancer's position.
+- Without any key, a deterministic rule-based fallback is used, so the app runs for anyone. The UI shows which engine produced each result.
+
+## AG Grid
+The payments table uses [AG Grid Community](https://www.ag-grid.com/) (sortable, filterable columns, INR amounts, an e-FIRA checkbox cell renderer).
 
 ## Run it
 ```bash

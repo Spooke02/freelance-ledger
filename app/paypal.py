@@ -1,6 +1,8 @@
 """PayPal REST client (sandbox by default). Reads transactions via Transaction Search; falls back with a clear error if not enabled."""
 import base64
+import json
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import httpx
 from .ledger import Txn
@@ -36,7 +38,8 @@ def parse_transactions(payload: dict) -> list[Txn]:
         info, payer = d.get("transaction_info", {}), d.get("payer_info", {})
         amt = info.get("transaction_amount", {})
         value = float(amt.get("value", 0))
-        if value <= 0:
+        # Income = completed payments received (event codes T00xx). Excludes funding/initial balance (T19xx), transfers and reversals.
+        if value <= 0 or not str(info.get("transaction_event_code", "")).startswith("T00") or info.get("transaction_status") != "S":
             continue
         fee = abs(float(info.get("fee_amount", {}).get("value", 0)))
         name = (payer.get("payer_name") or {}).get("alternate_full_name") or payer.get("email_address") or "Unknown payer"
@@ -57,3 +60,57 @@ def fetch_transactions(days: int = 30) -> list[Txn]:
         raise PayPalError("Transaction Search is not enabled for this PayPal app. Enable it in the app's features on developer.paypal.com.")
     r.raise_for_status()
     return parse_transactions(r.json())
+
+
+def create_test_order(amount: str, currency: str, note: str, return_url: str, cancel_url: str) -> dict:
+    """Sandbox only: create an order; a sandbox buyer approves it, then capture_order() completes the payment."""
+    r = httpx.post(BASE[_env()] + "/v2/checkout/orders", timeout=30, headers={"Authorization": "Bearer " + token()},
+                   json={"intent": "CAPTURE", "purchase_units": [{"description": note[:120], "amount": {"currency_code": currency, "value": amount}}],
+                         "payment_source": {"paypal": {"experience_context": {"return_url": return_url, "cancel_url": cancel_url, "user_action": "PAY_NOW"}}}})
+    r.raise_for_status()
+    j = r.json()
+    remember_order(j["id"])
+    link = next(l["href"] for l in j["links"] if l["rel"] in ("payer-action", "approve"))
+    return {"order_id": j["id"], "approve_url": link}
+
+
+def capture_order(order_id: str) -> str:
+    r = httpx.post(BASE[_env()] + f"/v2/checkout/orders/{order_id}/capture", timeout=30,
+                   headers={"Authorization": "Bearer " + token(), "Content-Type": "application/json"}, content=b"{}")
+    r.raise_for_status()
+    return r.json().get("status", "")
+
+
+ORDERS = Path(__file__).resolve().parent.parent / "data" / "orders.json"
+
+
+def remember_order(order_id: str) -> None:
+    ids = json.loads(ORDERS.read_text()) if ORDERS.exists() else []
+    if order_id not in ids:
+        ORDERS.parent.mkdir(exist_ok=True)
+        ORDERS.write_text(json.dumps(ids + [order_id]))
+
+
+def parse_order(o: dict) -> list[Txn]:
+    """Completed captures of one PayPal order -> Txn (Transaction Search can lag, so the app also reads its own orders)."""
+    out = []
+    for pu in o.get("purchase_units", []):
+        for c in pu.get("payments", {}).get("captures", []):
+            if c.get("status") != "COMPLETED":
+                continue
+            fee = c.get("seller_receivable_breakdown", {}).get("paypal_fee", {}).get("value", "0")
+            name = ((o.get("payer") or {}).get("name") or {})
+            out.append(Txn(id=c["id"], date=c.get("create_time", "")[:10], payer=" ".join(filter(None, [name.get("given_name"), name.get("surname")])) or "PayPal buyer",
+                           currency=c["amount"]["currency_code"], gross=float(c["amount"]["value"]), fee=float(fee), note=pu.get("description", "")))
+    return out
+
+
+def fetch_orders() -> list[Txn]:
+    if not ORDERS.exists():
+        return []
+    tok, out = token(), []
+    for oid in json.loads(ORDERS.read_text()):
+        r = httpx.get(BASE[_env()] + f"/v2/checkout/orders/{oid}", headers={"Authorization": "Bearer " + tok}, timeout=20)
+        if r.status_code == 200:
+            out += parse_order(r.json())
+    return out

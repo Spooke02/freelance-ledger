@@ -1,7 +1,7 @@
 """AI layer: categorise payments and explain the position in plain language.
 
-Uses the Anthropic API when ANTHROPIC_API_KEY is set; otherwise a deterministic rule-based fallback,
-so the demo runs for judges without any key.
+Provider order: any OpenAI-compatible endpoint (AI_BASE_URL + AI_MODEL [+ AI_API_KEY]: Google Gemini free tier, Groq, OpenRouter,
+local Ollama ...) -> Anthropic (ANTHROPIC_API_KEY) -> deterministic rule-based fallback, so the demo runs for judges with no key at all.
 """
 import json
 import os
@@ -26,7 +26,28 @@ def _rule_category(note: str) -> str:
     return "Other"
 
 
-def _claude(prompt: str, max_tokens: int = 600) -> str | None:
+def engine_name() -> str:
+    if os.getenv("AI_BASE_URL") and os.getenv("AI_MODEL"):
+        return os.getenv("AI_MODEL")
+    return "claude" if os.getenv("ANTHROPIC_API_KEY") else "rules"
+
+
+def _openai_compatible(prompt: str, max_tokens: int) -> str | None:
+    base, model, key = os.getenv("AI_BASE_URL"), os.getenv("AI_MODEL"), os.getenv("AI_API_KEY", "")
+    try:
+        r = httpx.post(base.rstrip("/") + "/chat/completions", timeout=60,
+                       headers={"Authorization": "Bearer " + key} if key else {},
+                       json={"model": model, "max_tokens": max_tokens, "temperature": 0,
+                             "messages": [{"role": "user", "content": prompt}]})
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return None
+
+
+def _llm(prompt: str, max_tokens: int = 600) -> str | None:
+    if os.getenv("AI_BASE_URL") and os.getenv("AI_MODEL"):
+        return _openai_compatible(prompt, max_tokens)
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         return None
@@ -45,7 +66,7 @@ def _claude(prompt: str, max_tokens: int = 600) -> str | None:
 
 def categorise(notes: list[str]) -> tuple[list[str], str]:
     """Returns (categories, engine) where engine is 'claude' or 'rules'."""
-    out = _claude(
+    out = _llm(
         "Classify each freelance payment note into exactly one of %s. "
         "Reply with only a JSON array of strings, same order and length.\nNotes: %s" % (CATEGORIES, json.dumps(notes))
     )
@@ -54,7 +75,7 @@ def categorise(notes: list[str]) -> tuple[list[str], str]:
         try:
             arr = json.loads(m.group(0)) if m else []
             if len(arr) == len(notes) and all(a in CATEGORIES for a in arr):
-                return arr, "claude"
+                return arr, engine_name()
         except json.JSONDecodeError:
             pass
     return [_rule_category(n) for n in notes], "rules"
@@ -66,10 +87,10 @@ def explain(summary: dict) -> tuple[str, str]:
         f"({summary['threshold_pct'] * 100:.1f}% of the INR {summary['threshold_inr']:,.0f} GST registration threshold). "
         f"Status: {summary['status']}. {len(summary['missing_firc'])} foreign payment(s) have no e-FIRA/FIRC marked."
     )
-    out = _claude(
+    out = _llm(
         "You are a careful assistant for an Indian freelancer. In 3 short sentences, explain this position in plain "
         "language and what to double-check with a CA. Do not give tax advice or guarantees.\n" + json.dumps(summary)
     )
     if out:
-        return out.strip(), "claude"
+        return out.strip(), engine_name()
     return base + " This is record-keeping, not tax advice; confirm with a CA.", "rules"

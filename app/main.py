@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -52,7 +52,13 @@ def mark(m: Mark):
 def state(source: str = "demo", fy: int | None = None):
     if source == "paypal":
         try:
-            txns = paypal.fetch_transactions()
+            txns = paypal.fetch_orders()
+            seen = {t.id for t in txns}
+            try:
+                txns += [t for t in paypal.fetch_transactions() if t.id not in seen]
+            except paypal.PayPalError:
+                if not txns:
+                    raise
         except paypal.PayPalError as e:
             raise HTTPException(status_code=502, detail=str(e))
     else:
@@ -79,6 +85,25 @@ def state(source: str = "demo", fy: int | None = None):
         "explanation": text,
         "ai": {"categorise": engine, "explain": text_engine},
     }
+
+
+@app.get("/api/sandbox/order")
+def sandbox_order(amount: str = "100.00", currency: str = "USD", note: str = "Test freelance payment", base: str = "http://127.0.0.1:8765"):
+    """Sandbox only: returns a PayPal approval link. Approve it with a SANDBOX buyer account to create a real sandbox payment."""
+    try:
+        return paypal.create_test_order(amount, currency, note, f"{base}/api/sandbox/return", f"{base}/")
+    except paypal.PayPalError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get("/api/sandbox/return")
+def sandbox_return(token: str):
+    """PayPal redirects here after approval; capture the order, then show the ledger."""
+    try:
+        paypal.capture_order(token)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Capture failed: {e}")
+    return RedirectResponse("/")
 
 
 @app.get("/")

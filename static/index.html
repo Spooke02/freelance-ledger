@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FreelanceLedger</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-grid.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/styles/ag-theme-quartz.css">
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@32.3.3/dist/ag-grid-community.min.js"></script>
 <style>
 :root{--bg:#f7f8fa;--card:#fff;--tx:#14213d;--mu:#5b6678;--ln:#e3e7ee;--ac:#1f3a5f;--ok:#2e8b57;--bad:#b33a3a}
 @media(prefers-color-scheme:dark){:root{--bg:#0f1624;--card:#17213a;--tx:#eef2f8;--mu:#a3b0c4;--ln:#27344f;--ac:#f5c542}}
@@ -40,16 +43,30 @@ button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid v
   </div>
   <div class="g" id="cards"></div>
   <div class="note" id="exp"></div>
-  <table>
-    <thead><tr><th>Date</th><th>Payer</th><th class="h">Category</th><th class="r">Amount</th><th class="r">Gross INR</th><th>e-FIRA/FIRC on file</th></tr></thead>
-    <tbody id="rows"></tbody>
-  </table>
+  <div id="grid" class="ag-theme-quartz" style="height:340px;margin-top:14px"></div>
   <p class="s" id="eng" style="margin-top:12px"></p>
 </div>
 <script>
 const $ = id => document.getElementById(id);
 const f = n => n.toLocaleString('en-IN', {maximumFractionDigits: 0});
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const gridApi = agGrid.createGrid($('grid'), {
+  columnDefs: [
+    {field: 'date', headerName: 'Date', width: 120},
+    {field: 'payer', headerName: 'Payer', flex: 1.4, minWidth: 140},
+    {field: 'category', headerName: 'Category', flex: 1, minWidth: 130},
+    {headerName: 'Amount', valueGetter: p => p.data.gross.toFixed(2) + ' ' + p.data.currency, width: 140, type: 'rightAligned'},
+    {field: 'fee', headerName: 'Fee', width: 90, type: 'rightAligned', valueFormatter: p => p.value.toFixed(2)},
+    {field: 'gross_inr', headerName: 'Gross INR', width: 130, type: 'rightAligned', valueFormatter: p => '₹' + f(p.value)},
+    {headerName: 'e-FIRA/FIRC on file', width: 170, cellRenderer: p => {
+      if (p.data.currency === 'INR') return 'n/a';
+      const el = document.createElement('input'); el.type = 'checkbox'; el.checked = p.data.has_firc; el.setAttribute('aria-label', 'e-FIRA on file');
+      el.onchange = () => mark(p.data.id, el.checked); return el; }},
+  ],
+  defaultColDef: {sortable: true, filter: true, resizable: true},
+  domLayout: 'normal',
+  overlayNoRowsTemplate: 'No payments for this source yet',
+});
 async function load() {
   $('msg').textContent = 'Loading...'; $('msg').className = '';
   const r = await fetch('/api/state?source=' + $('src').value);
@@ -64,12 +81,7 @@ async function load() {
     `<div class="bar"><i style="width:${Math.min(100, s.threshold_pct * 100)}%"></i></div></div>` +
     `<div class="c">Missing e-FIRA/FIRC<b>${s.missing_firc.length}</b>foreign payments</div>`;
   $('exp').textContent = j.explanation;
-  $('rows').innerHTML = j.txns.map(t =>
-    `<tr><td>${esc(t.date)}</td><td>${esc(t.payer)}</td><td class="h"><span class="tag">${esc(t.category)}</span></td>` +
-    `<td class="r">${t.gross.toFixed(2)} ${esc(t.currency)}</td><td class="r">₹${f(t.gross_inr)}</td>` +
-    `<td>${t.currency === 'INR' ? 'n/a' : `<input type="checkbox" ${t.has_firc ? 'checked' : ''} data-id="${esc(t.id)}" aria-label="e-FIRA on file">`}</td></tr>`
-  ).join('');
-  document.querySelectorAll('input[data-id]').forEach(el => el.onchange = () => mark(el.dataset.id, el.checked));
+  gridApi.setGridOption('rowData', j.txns);
   $('eng').textContent = `AI: categories by ${j.ai.categorise}, explanation by ${j.ai.explain}. ` + (j.source === 'demo' ? 'Demo data is fictional.' : '');
 }
 async function mark(id, value) {
