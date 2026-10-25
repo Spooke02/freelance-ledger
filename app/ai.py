@@ -64,8 +64,21 @@ def _llm(prompt: str, max_tokens: int = 600) -> str | None:
         return None  # never block the ledger on the AI call
 
 
+_CACHE: dict = {}  # successful model answers only (saves free-tier quota, makes reloads instant); cleared on restart
+
+
 def categorise(notes: list[str]) -> tuple[list[str], str]:
-    """Returns (categories, engine) where engine is 'claude' or 'rules'."""
+    """Returns (categories, engine) where engine is the model name or 'rules'."""
+    key = ("cat", tuple(notes))
+    if key in _CACHE:
+        return _CACHE[key]
+    result = _categorise(notes)
+    if result[1] != "rules":
+        _CACHE[key] = result
+    return result
+
+
+def _categorise(notes: list[str]) -> tuple[list[str], str]:
     out = _llm(
         "Classify each freelance payment note into exactly one of %s. "
         "Reply with only a JSON array of strings, same order and length.\nNotes: %s" % (CATEGORIES, json.dumps(notes))
@@ -82,6 +95,16 @@ def categorise(notes: list[str]) -> tuple[list[str], str]:
 
 
 def explain(summary: dict) -> tuple[str, str]:
+    key = ("exp", json.dumps(summary, sort_keys=True))
+    if key in _CACHE:
+        return _CACHE[key]
+    result = _explain(summary)
+    if result[1] != "rules":
+        _CACHE[key] = result
+    return result
+
+
+def _explain(summary: dict) -> tuple[str, str]:
     base = (
         f"FY {summary['fy']}: {summary['count']} payments, gross INR {summary['gross_inr']:,.0f} "
         f"({summary['threshold_pct'] * 100:.1f}% of the INR {summary['threshold_inr']:,.0f} GST registration threshold). "

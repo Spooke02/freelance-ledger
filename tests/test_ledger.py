@@ -102,3 +102,14 @@ def test_ask_uses_model_when_configured(monkeypatch):
     monkeypatch.setenv("AI_MODEL", "m")
     monkeypatch.setattr(ai, "_openai_compatible", lambda prompt, n: "Contoso paid most.")
     assert ai.ask("who paid most?", {}, []) == ("Contoso paid most.", "m")
+
+
+def test_ai_results_are_cached(monkeypatch):
+    ai._CACHE.clear()
+    monkeypatch.setenv("AI_BASE_URL", "http://x/v1")
+    monkeypatch.setenv("AI_MODEL", "m")
+    calls = []
+    monkeypatch.setattr(ai, "_openai_compatible", lambda prompt, n: calls.append(1) or '["Other"]')
+    ai.categorise(["zzz"]); ai.categorise(["zzz"])
+    assert len(calls) == 1
+    ai._CACHE.clear()
