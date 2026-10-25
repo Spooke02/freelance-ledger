@@ -1,6 +1,6 @@
 from datetime import date
 
-from app import ai, main
+from app import ai, main, paypal
 from app.ai import _rule_category
 from app.ledger import Txn, financial_year, summarise, to_inr
 from app.paypal import parse_order, parse_transactions
@@ -121,3 +121,9 @@ def test_ask_rate_limit_per_ip():
     assert not main._allow_ask("1.2.3.4")
     assert main._allow_ask("5.6.7.8")
     main._ASKS.clear()
+
+
+def test_known_order_ids_merges_env_and_dedupes(monkeypatch, tmp_path):
+    monkeypatch.setattr(paypal, "ORDERS", tmp_path / "none.json")
+    monkeypatch.setenv("PAYPAL_ORDER_IDS", "A, B ,A")
+    assert paypal.known_order_ids() == ["A", "B"]

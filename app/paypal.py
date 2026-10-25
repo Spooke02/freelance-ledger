@@ -105,11 +105,19 @@ def parse_order(o: dict) -> list[Txn]:
     return out
 
 
+def known_order_ids() -> list[str]:
+    """Orders created locally (data/orders.json) plus any listed in PAYPAL_ORDER_IDS (comma-separated; lets a hosted demo show sandbox payments)."""
+    ids = json.loads(ORDERS.read_text()) if ORDERS.exists() else []
+    ids += [i.strip() for i in os.getenv("PAYPAL_ORDER_IDS", "").split(",") if i.strip()]
+    return list(dict.fromkeys(ids))
+
+
 def fetch_orders() -> list[Txn]:
-    if not ORDERS.exists():
+    ids = known_order_ids()
+    if not ids:
         return []
     tok, out = token(), []
-    for oid in json.loads(ORDERS.read_text()):
+    for oid in ids:
         r = httpx.get(BASE[_env()] + f"/v2/checkout/orders/{oid}", headers={"Authorization": "Bearer " + tok}, timeout=20)
         if r.status_code == 200:
             out += parse_order(r.json())

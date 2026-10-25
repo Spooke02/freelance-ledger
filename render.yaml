@@ -19,6 +19,8 @@ services:
         value: gemini-3.5-flash-lite
       - key: AI_API_KEY
         sync: false          # enter in the Render dashboard (Gemini key)
+      - key: PAYPAL_ORDER_IDS
+        value: 84T85857GF530544G   # sandbox order(s) shown in the PayPal view; comma-separate more
       - key: ASK_LIMIT_PER_HOUR
         value: "10"
       - key: PYTHON_VERSION
