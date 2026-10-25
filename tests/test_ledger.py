@@ -88,3 +88,17 @@ def test_ai_falls_back_to_rules_on_bad_output(monkeypatch):
     monkeypatch.setattr(ai, "_openai_compatible", lambda prompt, n: "not json")
     cats, engine = ai.categorise(["Python data pipeline"])
     assert engine == "rules" and cats == ["Software/automation"]
+
+
+def test_ask_without_model_says_so(monkeypatch):
+    for k in ("AI_BASE_URL", "AI_MODEL", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    text, engine = ai.ask("who paid most?", {"fy": "2026-27"}, [])
+    assert engine == "rules" and "No AI model" in text
+
+
+def test_ask_uses_model_when_configured(monkeypatch):
+    monkeypatch.setenv("AI_BASE_URL", "http://x/v1")
+    monkeypatch.setenv("AI_MODEL", "m")
+    monkeypatch.setattr(ai, "_openai_compatible", lambda prompt, n: "Contoso paid most.")
+    assert ai.ask("who paid most?", {}, []) == ("Contoso paid most.", "m")

@@ -87,6 +87,18 @@ def state(source: str = "demo", fy: int | None = None):
     }
 
 
+class Ask(BaseModel):
+    question: str
+    source: str = "demo"
+
+
+@app.post("/api/ask")
+def ask(a: Ask):
+    data = state(source=a.source)
+    answer, engine = ai.ask(a.question, data["summary"], data["txns"])
+    return {"answer": answer, "engine": engine}
+
+
 @app.get("/api/sandbox/order")
 def sandbox_order(amount: str = "100.00", currency: str = "USD", note: str = "Test freelance payment", base: str = "http://127.0.0.1:8765"):
     """Sandbox only: returns a PayPal approval link. Approve it with a SANDBOX buyer account to create a real sandbox payment."""

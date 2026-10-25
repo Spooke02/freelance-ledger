@@ -44,6 +44,11 @@ button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid v
   <div class="g" id="cards"></div>
   <div class="note" id="exp"></div>
   <div id="grid" class="ag-theme-quartz" style="height:340px;margin-top:14px"></div>
+  <div class="note">
+    <label for="q"><b>Ask your ledger</b></label>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="q" style="flex:1;padding:8px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--tx)" placeholder="e.g. Which payments still need an e-FIRA, and which client paid the most?"><button id="askbtn">Ask</button></div>
+    <p id="ans" style="margin:10px 0 0"></p>
+  </div>
   <p class="s" id="eng" style="margin-top:12px"></p>
 </div>
 <script>
@@ -88,6 +93,12 @@ async function mark(id, value) {
   await fetch('/api/firc', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id, value})});
   load();
 }
+$('askbtn').onclick = async () => {
+  const question = $('q').value.trim(); if (!question) return;
+  $('ans').textContent = 'Thinking...';
+  const r = await fetch('/api/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question, source: $('src').value})});
+  const j = await r.json(); $('ans').textContent = (j.answer || j.detail || 'Error') + (j.engine ? '  [' + j.engine + ']' : '');
+};
 $('go').onclick = load; $('src').onchange = load; load();
 </script>
 </body>

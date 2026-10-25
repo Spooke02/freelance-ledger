@@ -94,3 +94,16 @@ def explain(summary: dict) -> tuple[str, str]:
     if out:
         return out.strip(), engine_name()
     return base + " This is record-keeping, not tax advice; confirm with a CA.", "rules"
+
+
+def ask(question: str, summary: dict, txns: list[dict]) -> tuple[str, str]:
+    """Answer a freelancer's question about their own ledger. Needs a configured model; otherwise says so plainly."""
+    ctx = {"summary": summary, "payments": [{k: t[k] for k in ("date", "payer", "category", "currency", "gross", "fee", "gross_inr", "has_firc")} for t in txns]}
+    out = _llm(
+        "You answer questions about ONE Indian freelancer's PayPal ledger using only the JSON below. Be concise (max 5 sentences). "
+        "If the data does not contain the answer, say so. This is record-keeping, not tax advice; for tax or GST rules tell them to confirm with a CA.\n"
+        f"LEDGER: {json.dumps(ctx)}\nQUESTION: {question[:500]}"
+    )
+    if out:
+        return out.strip(), engine_name()
+    return "No AI model is configured. Set AI_BASE_URL, AI_MODEL and AI_API_KEY (see .env.example) to ask questions about your ledger.", "rules"
