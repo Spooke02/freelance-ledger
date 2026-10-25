@@ -5,6 +5,7 @@ Run:  python video/make_demo.py
 """
 import json
 import subprocess
+import sys
 import time
 import wave
 from pathlib import Path
@@ -55,9 +56,17 @@ SCENES = [
 ]
 
 
+PIPER_VOICE = HERE / "voices" / "en_US-lessac-medium.onnx"  # neural voice (offline); falls back to the Windows voice if missing
+
+
 def tts(text: str, path: Path) -> float:
     txt = path.with_suffix(".txt")
     txt.write_text(text, encoding="utf-8")
+    if PIPER_VOICE.exists():
+        subprocess.run([sys.executable, "-m", "piper", "-m", str(PIPER_VOICE), "-f", str(path), "--length-scale", "1.08", "--sentence-silence", "0.35"],
+                       input=text.encode("utf-8"), check=True, capture_output=True)
+        with wave.open(str(path)) as w:
+            return w.getnframes() / w.getframerate()
     ps = (f"Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SelectVoice('Microsoft Zira Desktop'); "
           f"$s.Rate=0; $s.SetOutputToWaveFile('{path}'); $s.Speak([IO.File]::ReadAllText('{txt}',[Text.Encoding]::UTF8)); $s.Dispose()")
     subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
