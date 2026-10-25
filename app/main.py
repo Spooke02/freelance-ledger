@@ -1,9 +1,11 @@
 import json
 import os
+import time
+from collections import defaultdict, deque
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -92,18 +94,36 @@ class Ask(BaseModel):
     source: str = "demo"
 
 
+_ASKS: dict[str, deque] = defaultdict(deque)
+ASK_LIMIT, ASK_WINDOW = int(os.getenv("ASK_LIMIT_PER_HOUR", "10")), 3600
+
+
+def _allow_ask(ip: str) -> bool:
+    """Per-IP limit so a public demo cannot drain the free AI quota."""
+    q, now = _ASKS[ip], time.time()
+    while q and now - q[0] > ASK_WINDOW:
+        q.popleft()
+    if len(q) >= ASK_LIMIT:
+        return False
+    q.append(now)
+    return True
+
+
 @app.post("/api/ask")
-def ask(a: Ask):
+def ask(a: Ask, request: Request):
+    if not _allow_ask(request.client.host if request.client else "?"):
+        raise HTTPException(status_code=429, detail=f"Demo limit: {ASK_LIMIT} questions per hour. Try again later.")
     data = state(source=a.source)
     answer, engine = ai.ask(a.question, data["summary"], data["txns"])
     return {"answer": answer, "engine": engine}
 
 
 @app.get("/api/sandbox/order")
-def sandbox_order(amount: str = "100.00", currency: str = "USD", note: str = "Test freelance payment", base: str = "http://127.0.0.1:8765"):
+def sandbox_order(request: Request, amount: str = "100.00", currency: str = "USD", note: str = "Test freelance payment"):
     """Sandbox only: returns a PayPal approval link. Approve it with a SANDBOX buyer account to create a real sandbox payment."""
+    base = str(request.base_url).rstrip("/")  # always return to this server, never a caller-supplied URL
     try:
-        return paypal.create_test_order(amount, currency, note, f"{base}/api/sandbox/return", f"{base}/")
+        return paypal.create_test_order(amount, currency, note[:120], f"{base}/api/sandbox/return", f"{base}/")
     except paypal.PayPalError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

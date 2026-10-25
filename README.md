@@ -35,3 +35,8 @@ Never commit `.env`. Only sandbox credentials are supported.
 - FX: Frankfurter (ECB reference rates), per payment date. Your bank's actual rate may differ; the e-FIRA is the document of record.
 - GST threshold defaults to INR 20 lakh (INR 10 lakh in special-category states): change `GST_THRESHOLD_INR` in `app/ledger.py`.
 - Demo data is fictional. License: MIT.
+
+## Deploy on Render
+`render.yaml` defines a free web service. In Render: New > Blueprint > select this repo, then enter `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` (PayPal sandbox)
+and `AI_API_KEY` (Gemini) in the dashboard. The free plan sleeps when idle (first request can take about a minute) and its disk is not persistent.
+The AI question box is limited to 10 questions per hour per visitor (`ASK_LIMIT_PER_HOUR`).

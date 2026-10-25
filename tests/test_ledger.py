@@ -1,6 +1,6 @@
 from datetime import date
 
-from app import ai
+from app import ai, main
 from app.ai import _rule_category
 from app.ledger import Txn, financial_year, summarise, to_inr
 from app.paypal import parse_order, parse_transactions
@@ -113,3 +113,11 @@ def test_ai_results_are_cached(monkeypatch):
     ai.categorise(["zzz"]); ai.categorise(["zzz"])
     assert len(calls) == 1
     ai._CACHE.clear()
+
+
+def test_ask_rate_limit_per_ip():
+    main._ASKS.clear()
+    assert all(main._allow_ask("1.2.3.4") for _ in range(main.ASK_LIMIT))
+    assert not main._allow_ask("1.2.3.4")
+    assert main._allow_ask("5.6.7.8")
+    main._ASKS.clear()
